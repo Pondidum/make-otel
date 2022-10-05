@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"makeotel/parser"
 	"os"
 	"testing"
 
@@ -13,15 +13,12 @@ func TestParseFile(t *testing.T) {
 	assert.NoError(t, err)
 	defer f.Close()
 
-	p := NewCallgrindParser(f)
-	p.parse()
+	p := parser.NewCallgrindParser(f)
+	_, err = p.Parse()
+	assert.NoError(t, err)
 
-	assert.True(t, p.Eof())
-	for n, f := range p.profile.functions {
-		fmt.Printf("name: %s, called: %v, took: %v \n", n, f.called, f.samples)
+	// for _, fn := range profile.Roots() {
+	// 	fmt.Println(fn.Name)
+	// }
 
-		// for k, v := range f.calls {
-		// 	fmt.Printf(" - %s: %v\n", k, v.calls)
-		// }
-	}
 }
