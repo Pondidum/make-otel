@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/exp/slices"
 )
@@ -32,7 +33,6 @@ func NewCallgrindParser(r io.Reader) *callgrindParser {
 		lineParser: NewLineParser(r),
 		profile: &Profile{
 			functions: map[string]*Function{},
-			samples:   0,
 		},
 
 		positions:    map[string]string{},
@@ -146,8 +146,17 @@ func (p *callgrindParser) parseCostLineDefinition() bool {
 }
 
 func (p *callgrindParser) parseCostSummary() bool {
-	key, _ := p.parseKeys("summary", "totals")
-	return key != ""
+	key, value := p.parseKeys("summary", "totals")
+	if key == "" {
+		return false
+	}
+
+	fields := strings.Fields(value)
+	if totalCost, err := strconv.ParseFloat(fields[0], 32); err == nil {
+		p.profile.TotalCost = buildCost(totalCost, p.costEvents[0])
+	}
+
+	return true
 }
 
 func (p *callgrindParser) parseBodyLine() bool {
@@ -210,7 +219,6 @@ func (p *callgrindParser) parseCostLine(calls int) bool {
 
 	if calls == 0 {
 		fn.samples += events[0]
-		p.profile.samples += events[0]
 	} else {
 		callee := p.getCallee()
 		callee.Called += calls
@@ -220,17 +228,29 @@ func (p *callgrindParser) parseCostLine(calls int) bool {
 			call = &Call{
 				CalleeId: callee.ID,
 				Calls:    calls,
-				Cost:     events[0],
+				Cost:     buildCost(events[0], p.costEvents[0]),
 			}
 			fn.addCall(call)
 		} else {
 			call.Calls += calls
-			call.Cost += events[0]
+			call.Cost += buildCost(events[0], p.costEvents[0])
 		}
 	}
 
 	p.Consume()
 	return true
+}
+
+func buildCost(cost float64, costDefinition string) time.Duration {
+
+	multiplier := time.Duration(1)
+
+	if strings.HasSuffix(costDefinition, "usec") {
+		v, _ := strconv.Atoi(strings.TrimSuffix(costDefinition, "usec"))
+		multiplier = time.Duration(v) * time.Microsecond
+	}
+
+	return time.Duration(cost * float64(multiplier))
 }
 
 var positionRx = regexp.MustCompile(`^(?P<position>[cj]?(?:ob|fl|fi|fe|fn))=\s*(?:\((?P<id>\d+)\))?(?:\s*(?P<name>.+))?`)

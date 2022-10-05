@@ -1,5 +1,7 @@
 package parser
 
+import "time"
+
 func NewFunction(id string, name string) *Function {
 	return &Function{
 		ID:      id,
@@ -40,5 +42,5 @@ type Call struct {
 	// weight    float64
 
 	Calls int
-	Cost  float64
+	Cost  time.Duration
 }

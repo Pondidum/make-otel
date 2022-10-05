@@ -1,8 +1,11 @@
 package parser
 
+import "time"
+
 type Profile struct {
 	functions map[string]*Function
-	samples   float64
+
+	TotalCost time.Duration
 }
 
 func (p *Profile) addFunction(f *Function) {
