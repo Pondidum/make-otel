@@ -1,9 +1,21 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"makeotel/parser"
 	"os"
+	"time"
+
+	"github.com/go-logr/logr/funcr"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otlpgrpc "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func main() {
@@ -33,33 +45,91 @@ func run(args []string) error {
 		return err
 	}
 
-	start := profile.Roots()[0]
-	fmt.Println(start.Name)
+	root := profile.Roots()[0]
+	fmt.Println(root.Name)
 
-	printCalls(profile, "", start)
-	// for _, call := range start.Calls() {
-	// 	fmt.Println("=> " + call.Callee_id)
-	// 	fn, found := profile.GetFunction(call.Callee_id)
-	// 	if found {
+	ctx, shutdown := initTracer()
+	// printCalls(profile, "", start)
 
-	// 	}
-	// }
-	// for _, fn := range profile.Roots() {
-	// 	fmt.Println(fn.Name)
+	// ctx, end := createRootSpan(profile, start)
+	spans(ctx, profile, time.Now(), root, nil)
 
-	// }
-
+	shutdown()
 	return nil
 }
 
-func printCalls(profile *parser.Profile, indent string, fn *parser.Function) {
-	// fmt.Println(indent + fn.Name + ":")
+// func printCalls(profile *parser.Profile, indent string, fn *parser.Function) {
+// 	for _, call := range fn.Calls() {
+// 		fmt.Printf("%s=> %s (%vs)\n", indent, call.CalleeId, call.Cost.Seconds())
+// 		fn, found := profile.GetFunction(call.CalleeId)
+// 		if found {
+// 			printCalls(profile, indent+"  ", fn)
+// 		}
+// 	}
+// }
 
+func initTracer() (context.Context, func()) {
+	ctx := context.Background()
+
+	otel.SetLogger(funcr.New(func(prefix, args string) {
+		fmt.Println(args)
+	}, funcr.Options{Verbosity: 100}))
+
+	exporter, _ := otlpgrpc.New(ctx, otlpgrpc.WithInsecure())
+
+	res, _ := resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceNameKey.String("makeotel"),
+		))
+
+	ssp := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	// ParentBased/AlwaysSample Sampler is the default and that's fine for this
+	tracerProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithResource(res),
+		sdktrace.WithSpanProcessor(ssp),
+	)
+
+	// inject the tracer into the otel globals (and this starts the background stuff, I think)
+	otel.SetTracerProvider(tracerProvider)
+
+	// set up the W3C trace context as the global propagator
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	return ctx, func() {
+		tracerProvider.Shutdown(ctx)
+		exporter.Shutdown(ctx)
+	}
+}
+
+var tr = otel.Tracer("make-otel")
+
+func spans(ctx context.Context, profile *parser.Profile, start time.Time, fn *parser.Function, call *parser.Call) {
+	ctx, span := tr.Start(ctx, fn.Name, trace.WithTimestamp(start))
+
+	calls := fn.Called
+	if call != nil {
+		calls = call.Calls
+	}
+
+	span.SetAttributes(
+		attribute.String("module", fn.Module),
+		attribute.Int("called", calls),
+	)
+
+	nextStart := start
 	for _, call := range fn.Calls() {
-		fmt.Println(indent + "=> " + call.CalleeId)
-		fn, found := profile.GetFunction(call.CalleeId)
-		if found {
-			printCalls(profile, indent+"  ", fn)
+		if calledFn, found := profile.GetFunction(call.CalleeId); found {
+			spans(ctx, profile, nextStart, calledFn, call)
+			nextStart = nextStart.Add(call.Cost)
 		}
 	}
+
+	duration := profile.TotalCost
+	if call != nil {
+		duration = call.Cost
+	}
+
+	span.End(trace.WithTimestamp(start.Add(duration)))
+
 }
