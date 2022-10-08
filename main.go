@@ -118,11 +118,20 @@ func spans(ctx context.Context, profile *parser.Profile, start time.Time, fn *pa
 	)
 
 	nextStart := start
+	callTotal := time.Duration(0)
 	for _, call := range fn.Calls() {
 		if calledFn, found := profile.GetFunction(call.CalleeId); found {
 			spans(ctx, profile, nextStart, calledFn, call)
 			nextStart = nextStart.Add(call.Cost)
+			callTotal = callTotal + call.Cost
 		}
+	}
+
+	if call != nil && callTotal > 0 {
+		workTime := call.Cost - callTotal
+
+		_, s := tr.Start(ctx, fn.Name+"_body", trace.WithTimestamp(nextStart))
+		s.End(trace.WithTimestamp(nextStart.Add(workTime)))
 	}
 
 	duration := profile.TotalCost
