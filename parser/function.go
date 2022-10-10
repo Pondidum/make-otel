@@ -4,22 +4,24 @@ import "time"
 
 func NewFunction(id string, name string) *Function {
 	return &Function{
-		ID:      id,
-		Name:    name,
-		Called:  0,
-		samples: 0,
-		calls:   map[string]*Call{},
+		ID:         id,
+		Name:       name,
+		LineNumber: 0,
+		Called:     0,
+		Cost:       0,
+		calls:      map[string]*Call{},
 	}
 }
 
 type Function struct {
-	ID     string
-	Name   string
-	Module string
-	Called int
+	ID         string
+	Name       string
+	Module     string
+	LineNumber int64
+	Called     int
 
-	samples float64
-	calls   map[string]*Call
+	Cost  time.Duration
+	calls map[string]*Call
 }
 
 func (f *Function) addCall(c *Call) {

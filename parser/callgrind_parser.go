@@ -51,7 +51,10 @@ func (p *callgrindParser) Parse() (*Profile, error) {
 	p.ReadLine()
 
 	p.parseKey("version")
-	p.parseKey("creator")
+
+	if val := p.parseKey("creator"); val != "" {
+		p.profile.Creator = val
+	}
 
 	for p.parsePart() {
 	}
@@ -83,6 +86,7 @@ func (p *callgrindParser) parseHeaderLine() bool {
 	return p.parseEmpty() ||
 		p.parseComment() ||
 		p.parsePartDetail() ||
+		p.parseCommand() ||
 		p.parseDescription() ||
 		p.parseEventSpecification() ||
 		p.parseCostLineDefinition() ||
@@ -112,8 +116,17 @@ func (p *callgrindParser) parseComment() bool {
 }
 
 func (p *callgrindParser) parsePartDetail() bool {
-	k, _ := p.parseKeys("cmd", "pid", "thread", "part")
+	k, _ := p.parseKeys("pid", "thread", "part")
 	return k != ""
+}
+
+func (p *callgrindParser) parseCommand() bool {
+	val := p.parseKey("cmd")
+	if val != "" {
+		p.profile.Command = val
+	}
+
+	return val != ""
 }
 
 func (p *callgrindParser) parseDescription() bool {
@@ -209,6 +222,8 @@ func (p *callgrindParser) parseCostLine(calls int) bool {
 		p.lastPositions[i] = value
 	}
 
+	fn.LineNumber = p.lastPositions[0]
+
 	eventData := values[p.positionCount:]
 	eventData = append(eventData, make([]string, p.eventCount-len(eventData))...)
 
@@ -217,8 +232,9 @@ func (p *callgrindParser) parseCostLine(calls int) bool {
 		events[i], _ = strconv.ParseFloat(e, 32)
 	}
 
+	cost := buildCost(events[0], p.costEvents[0])
 	if calls == 0 {
-		fn.samples += events[0]
+		fn.Cost += cost
 	} else {
 		callee := p.getCallee()
 		callee.Called += calls
@@ -228,12 +244,12 @@ func (p *callgrindParser) parseCostLine(calls int) bool {
 			call = &Call{
 				CalleeId: callee.ID,
 				Calls:    calls,
-				Cost:     buildCost(events[0], p.costEvents[0]),
+				Cost:     cost,
 			}
 			fn.addCall(call)
 		} else {
 			call.Calls += calls
-			call.Cost += buildCost(events[0], p.costEvents[0])
+			call.Cost += cost
 		}
 	}
 

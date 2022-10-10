@@ -5,6 +5,9 @@ import "time"
 type Profile struct {
 	functions map[string]*Function
 
+	Creator string
+	Command string
+
 	TotalCost time.Duration
 }
 
