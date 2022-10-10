@@ -27,6 +27,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.10.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.10.0
 	go.opentelemetry.io/otel/trace v1.10.0
 	golang.org/x/exp v0.0.0-20221002003631-540bb7301a08
 	gopkg.in/yaml.v3 v3.0.1 // indirect
