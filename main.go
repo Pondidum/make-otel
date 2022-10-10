@@ -84,8 +84,10 @@ func spans(ctx context.Context, profile *parser.Profile, start time.Time, fn *pa
 	if call != nil && callTotal > 0 {
 		workTime := call.Cost - callTotal
 
-		_, s := tr.Start(ctx, fn.Name+"_body", trace.WithTimestamp(nextStart))
-		s.End(trace.WithTimestamp(nextStart.Add(workTime)))
+		if workTime > 0 {
+			_, s := tr.Start(ctx, fn.Name+"_body", trace.WithTimestamp(nextStart))
+			s.End(trace.WithTimestamp(nextStart.Add(workTime)))
+		}
 	}
 
 	duration := profile.TotalCost
