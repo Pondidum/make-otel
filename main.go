@@ -47,10 +47,9 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	// printCalls(profile, "", start)
 
-	// ctx, end := createRootSpan(profile, start)
-	spans(context.Background(), profile, time.Now(), root, nil)
+	ctx := tracing.WithTraceParent(context.Background())
+	spans(ctx, profile, time.Now(), root, nil)
 
 	shutdown()
 	return nil
