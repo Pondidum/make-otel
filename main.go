@@ -71,11 +71,20 @@ func spans(ctx context.Context, profile *parser.Profile, start time.Time, fn *pa
 		attribute.Int("called", calls),
 	)
 
+	if call == nil {
+		// should be the root span
+		span.SetAttributes(
+			attribute.String("creator", profile.Creator),
+			attribute.String("command", profile.Command),
+		)
+	}
+
 	nextStart := start
 	callTotal := time.Duration(0)
 	for _, call := range fn.Calls() {
 		if calledFn, found := profile.GetFunction(call.CalleeId); found {
 			spans(ctx, profile, nextStart, calledFn, call)
+
 			nextStart = nextStart.Add(call.Cost)
 			callTotal = callTotal + call.Cost
 		}
