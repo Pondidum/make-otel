@@ -23,10 +23,7 @@ import (
 
 const MakeOtelDebugEnvVar = "MAKE_OTEL_DEBUG"
 
-const OtlpEndpointEnvVar = "OTEL_EXPORTER_OTLP_ENDPOINT"
-const OtlpTracesEndpointEnvVar = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
-
-func InitTracer() (func(), error) {
+func InitTracer(conf *Config) (func(), error) {
 	ctx := context.Background()
 
 	if val, err := strconv.ParseBool(os.Getenv(MakeOtelDebugEnvVar)); err == nil && val {
@@ -35,7 +32,7 @@ func InitTracer() (func(), error) {
 		}, funcr.Options{Verbosity: 100}))
 	}
 
-	exporter, err := createExporter(ctx)
+	exporter, err := createExporter(ctx, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -63,16 +60,36 @@ func InitTracer() (func(), error) {
 	}, nil
 }
 
-func createExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
+type Config struct {
+	Endpoint   string
+	HeadersRaw []string
 
-	endpoint := "localhost:4317"
-	if val := os.Getenv(OtlpTracesEndpointEnvVar); val != "" {
-		endpoint = val
-	} else if val := os.Getenv(OtlpEndpointEnvVar); val != "" {
-		endpoint = val
+	Headers map[string]string
+}
+
+func (c *Config) ParseHeaders() error {
+
+	headers := map[string]string{}
+
+	for _, pair := range c.Headers {
+		s := strings.Split(pair, "=")
+		if len(pair) != 2 {
+			return fmt.Errorf("expected a key value pair in the form key=value, but got %s", pair)
+		}
+
+		header := s[0]
+		value := s[1]
+
+		headers[header] = value
 	}
 
-	endpoint = strings.ToLower(endpoint)
+	c.Headers = headers
+	return nil
+}
+
+func createExporter(ctx context.Context, conf *Config) (sdktrace.SpanExporter, error) {
+
+	endpoint := strings.ToLower(conf.Endpoint)
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
@@ -101,9 +118,7 @@ func createExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
 			opts = append(opts, otlphttp.WithInsecure())
 		}
 
-		// do headers somehow
-		//
-		//
+		opts = append(opts, otlphttp.WithHeaders(conf.Headers))
 
 		return otlphttp.New(ctx, opts...)
 	} else {
@@ -120,9 +135,7 @@ func createExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
 			opts = append(opts, otlpgrpc.WithInsecure())
 		}
 
-		// do headers somehow
-		//
-		//
+		opts = append(opts, otlpgrpc.WithHeaders(conf.Headers))
 
 		return otlpgrpc.New(ctx, opts...)
 	}

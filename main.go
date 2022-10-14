@@ -5,13 +5,18 @@ import (
 	"fmt"
 	"makeotel/parser"
 	"makeotel/tracing"
+	"makeotel/version"
 	"os"
 	"time"
 
+	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
+
+const OtlpEndpointEnvVar = "OTEL_EXPORTER_OTLP_ENDPOINT"
+const OtlpTracesEndpointEnvVar = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
 
 func main() {
 	err := run(os.Args[1:])
@@ -21,13 +26,94 @@ func main() {
 	}
 }
 
+type config struct {
+	traceParent string
+	timestamp   int64
+
+	version bool
+	help    bool
+}
+
+func helpText(flags *pflag.FlagSet) error {
+	usage := `Turns a callgrind format profile from Remake into an OpenTelemetry Trace, and
+send it to an OpenTelemetry collector.
+
+Usage:
+
+    makeotel [flags] <path_to_remake_profile>
+
+Flags:
+` + flags.FlagUsages()
+
+	fmt.Println(usage)
+	return nil
+}
+
+func traceFlags(conf *config) *pflag.FlagSet {
+	flags := pflag.NewFlagSet("trace", pflag.ContinueOnError)
+	flags.StringVar(&conf.traceParent, "trace-parent", os.Getenv("TRACEPARENT"), "the trace id to parent the spans to")
+	flags.Int64Var(&conf.timestamp, "timestamp", time.Now().UTC().Unix(), "timestamp of when make was invoked, in unix epoch format")
+
+	return flags
+}
+
+func commandFlags(conf *config) *pflag.FlagSet {
+	flags := pflag.NewFlagSet("commands", pflag.ContinueOnError)
+
+	flags.BoolVar(&conf.version, "version", false, "print the version of this tool, and exit")
+	flags.BoolVar(&conf.help, "help", false, "print the help text, and exit")
+
+	return flags
+}
+
+func otelFlags(conf *tracing.Config) *pflag.FlagSet {
+
+	defaultEndpoint := "localhost:4317"
+	if val := os.Getenv(OtlpTracesEndpointEnvVar); val != "" {
+		defaultEndpoint = val
+	} else if val := os.Getenv(OtlpEndpointEnvVar); val != "" {
+		defaultEndpoint = val
+	}
+
+	flags := pflag.NewFlagSet("otel", pflag.ContinueOnError)
+
+	flags.StringVar(&conf.Endpoint, "otlp-endpoint", defaultEndpoint, "A gRPC or HTTP endpoint to send traces to")
+	flags.StringSliceVar(&conf.HeadersRaw, "otlp-headers", []string{}, "key value pairs in the form k=v to set as headers")
+
+	return flags
+}
+
 func run(args []string) error {
-	if len(args) != 1 {
+	conf := &config{}
+	otelConf := &tracing.Config{}
+
+	flags := pflag.NewFlagSet("makeotel", pflag.ContinueOnError)
+	flags.AddFlagSet(commandFlags(conf))
+	flags.AddFlagSet(traceFlags(conf))
+	flags.AddFlagSet(otelFlags(otelConf))
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if conf.version {
+		fmt.Println(version.VersionNumber())
+		return nil
+	}
+
+	if conf.help {
+		return helpText(flags)
+	}
+
+	if flags.NArg() != 1 {
 		return fmt.Errorf("this program takes one argument: path")
 	}
 
-	file := args[0]
+	if err := otelConf.ParseHeaders(); err != nil {
+		return err
+	}
 
+	file := flags.Arg(0)
 	f, err := os.Open(file)
 	if err != nil {
 		return err
@@ -43,15 +129,17 @@ func run(args []string) error {
 	root := profile.Roots()[0]
 	fmt.Println(root.Name)
 
-	shutdown, err := tracing.InitTracer()
+	shutdown, err := tracing.InitTracer(otelConf)
 	if err != nil {
 		return err
 	}
 
-	ctx := tracing.WithTraceParent(context.Background())
-	spans(ctx, profile, time.Now(), root, nil)
+	ts := time.Unix(conf.timestamp, 0)
+	ctx := tracing.WithTraceParent(context.Background(), conf.traceParent)
+	spans(ctx, profile, ts, root, nil)
 
 	shutdown()
+
 	return nil
 }
 

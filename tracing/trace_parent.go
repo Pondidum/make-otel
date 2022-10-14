@@ -2,15 +2,12 @@ package tracing
 
 import (
 	"context"
-	"os"
 
 	"go.opentelemetry.io/otel"
 )
 
-func WithTraceParent(ctx context.Context) context.Context {
-
-	id := os.Getenv("TRACEPARENT")
-	if id == "" {
+func WithTraceParent(ctx context.Context, parent string) context.Context {
+	if parent == "" {
 		return ctx
 	}
 
@@ -18,7 +15,7 @@ func WithTraceParent(ctx context.Context) context.Context {
 	// the 'traceparent' key is a private constant in the otel library so this
 	// is using an internal detail but it's probably fine
 	carrier := NewCliCarrier()
-	carrier.Set("traceparent", id)
+	carrier.Set("traceparent", parent)
 
 	prop := otel.GetTextMapPropagator()
 	return prop.Extract(ctx, carrier)
