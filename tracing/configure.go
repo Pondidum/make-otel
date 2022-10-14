@@ -6,9 +6,7 @@ import (
 	"makeotel/version"
 	"net"
 	"net/url"
-	"os"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/go-logr/logr/funcr"
@@ -21,12 +19,10 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
 )
 
-const MakeOtelDebugEnvVar = "MAKE_OTEL_DEBUG"
-
 func InitTracer(conf *Config) (func(), error) {
 	ctx := context.Background()
 
-	if val, err := strconv.ParseBool(os.Getenv(MakeOtelDebugEnvVar)); err == nil && val {
+	if conf.Debug {
 		otel.SetLogger(funcr.New(func(prefix, args string) {
 			fmt.Println(args)
 		}, funcr.Options{Verbosity: 100}))
@@ -63,6 +59,7 @@ func InitTracer(conf *Config) (func(), error) {
 type Config struct {
 	Endpoint   string
 	HeadersRaw []string
+	Debug      bool
 
 	Headers map[string]string
 }

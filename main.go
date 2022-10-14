@@ -7,6 +7,8 @@ import (
 	"makeotel/tracing"
 	"makeotel/version"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -17,6 +19,7 @@ import (
 
 const OtlpEndpointEnvVar = "OTEL_EXPORTER_OTLP_ENDPOINT"
 const OtlpTracesEndpointEnvVar = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+const MakeOtelDebugEnvVar = "MAKE_OTEL_DEBUG"
 
 func main() {
 	err := run(os.Args[1:])
@@ -34,24 +37,36 @@ type config struct {
 	help    bool
 }
 
-func helpText(flags *pflag.FlagSet) error {
-	usage := `Turns a callgrind format profile from Remake into an OpenTelemetry Trace, and
+func helpText() error {
+	maxWidth := 110
+
+	sb := strings.Builder{}
+	sb.WriteString(`Turns a callgrind format profile from Remake into an OpenTelemetry Trace, and
 send it to an OpenTelemetry collector.
 
 Usage:
 
-    makeotel [flags] <path_to_remake_profile>
+      makeotel [flags] <path_to_remake_profile>
 
-Flags:
-` + flags.FlagUsages()
+Trace Flags:
 
-	fmt.Println(usage)
+` + traceFlags(&config{}).FlagUsagesWrapped(maxWidth) + `
+
+OpenTelemetry Flags:
+
+` + otelFlags(&tracing.Config{}).FlagUsagesWrapped(maxWidth) + `
+
+General Flags:
+
+` + commandFlags(&config{}).FlagUsagesWrapped(maxWidth))
+
+	fmt.Println(sb.String())
 	return nil
 }
 
 func traceFlags(conf *config) *pflag.FlagSet {
 	flags := pflag.NewFlagSet("trace", pflag.ContinueOnError)
-	flags.StringVar(&conf.traceParent, "trace-parent", os.Getenv("TRACEPARENT"), "the trace id to parent the spans to")
+	flags.StringVar(&conf.traceParent, "trace-parent", os.Getenv("TRACEPARENT"), "the trace id to parent the spans to.  Can also be set by TRACEPARENT env var.")
 	flags.Int64Var(&conf.timestamp, "timestamp", time.Now().UTC().Unix(), "timestamp of when make was invoked, in unix epoch format")
 
 	return flags
@@ -75,10 +90,16 @@ func otelFlags(conf *tracing.Config) *pflag.FlagSet {
 		defaultEndpoint = val
 	}
 
+	defaultDebug := false
+	if val, err := strconv.ParseBool(os.Getenv(MakeOtelDebugEnvVar)); err == nil {
+		defaultDebug = val
+	}
+
 	flags := pflag.NewFlagSet("otel", pflag.ContinueOnError)
 
-	flags.StringVar(&conf.Endpoint, "otlp-endpoint", defaultEndpoint, "A gRPC or HTTP endpoint to send traces to")
+	flags.StringVar(&conf.Endpoint, "otlp-endpoint", defaultEndpoint, "A gRPC or HTTP endpoint to send traces to. Can also be set by "+OtlpEndpointEnvVar+" or "+OtlpTracesEndpointEnvVar+" env vars")
 	flags.StringSliceVar(&conf.HeadersRaw, "otlp-headers", []string{}, "key value pairs in the form k=v to set as headers")
+	flags.BoolVar(&conf.Debug, "otlp-debug", defaultDebug, "Set to true to see debug output from the OTEL Exporter.  Can also be set by "+MakeOtelDebugEnvVar+" env var")
 
 	return flags
 }
@@ -87,10 +108,16 @@ func run(args []string) error {
 	conf := &config{}
 	otelConf := &tracing.Config{}
 
+	allFlags := []*pflag.FlagSet{
+		traceFlags(conf),
+		otelFlags(otelConf),
+		commandFlags(conf),
+	}
+
 	flags := pflag.NewFlagSet("makeotel", pflag.ContinueOnError)
-	flags.AddFlagSet(commandFlags(conf))
-	flags.AddFlagSet(traceFlags(conf))
-	flags.AddFlagSet(otelFlags(otelConf))
+	for _, set := range allFlags {
+		flags.AddFlagSet(set)
+	}
 
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -102,7 +129,7 @@ func run(args []string) error {
 	}
 
 	if conf.help {
-		return helpText(flags)
+		return helpText()
 	}
 
 	if flags.NArg() != 1 {
