@@ -1,0 +1,62 @@
+version: 1
+creator: remake 4.3+dbg-1.5
+cmd: remake --profile build
+pid: 498996
+
+desc: Trigger: Normal program termination
+desc: Node: Targets
+
+positions: line
+events: 100usec
+summary: 90095
+
+fn=two.ts
+0 1
+
+fl=makefile
+
+fn=two.js
+15 60069
+cfi=makefile
+cfn=three.js
+calls=1 15
+15 50034
+cfn=two.ts
+calls=1 15
+15 1
+
+fn=one.ts
+0 1
+
+fl=makefile
+
+fn=build
+8 1
+cfi=makefile
+cfn=two.js
+calls=1 8
+8 60069
+cfi=makefile
+cfn=one.js
+calls=1 8
+8 30023
+
+fn=three.ts
+0 1
+
+fl=makefile
+
+fn=one.js
+10 30023
+cfn=one.ts
+calls=1 10
+10 1
+
+fl=makefile
+
+fn=three.js
+20 50034
+cfn=three.ts
+calls=1 20
+20 1
+
