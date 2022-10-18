@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/exp/slices"
 )
 
 type callgrindParser struct {
@@ -52,7 +50,7 @@ func (p *callgrindParser) Parse() (*Profile, error) {
 
 	p.parseKey("version")
 
-	if val := p.parseKey("creator"); val != "" {
+	if val, found := p.parseKey("creator"); found {
 		p.profile.Creator = val
 	}
 
@@ -116,13 +114,24 @@ func (p *callgrindParser) parseComment() bool {
 }
 
 func (p *callgrindParser) parsePartDetail() bool {
-	k, _ := p.parseKeys("pid", "thread", "part")
-	return k != ""
+	if _, found := p.parseKey("pid"); found {
+		return true
+	}
+
+	if _, found := p.parseKey("thread"); found {
+		return true
+	}
+
+	if _, found := p.parseKey("part"); found {
+		return true
+	}
+
+	return false
 }
 
 func (p *callgrindParser) parseCommand() bool {
-	val := p.parseKey("cmd")
-	if val != "" {
+	val, found := p.parseKey("cmd")
+	if found {
 		p.profile.Command = val
 	}
 
@@ -130,41 +139,46 @@ func (p *callgrindParser) parseCommand() bool {
 }
 
 func (p *callgrindParser) parseDescription() bool {
-	return p.parseKey("desc") != ""
+	_, found := p.parseKey("desc")
+	return found
 }
 
 func (p *callgrindParser) parseEventSpecification() bool {
-	return p.parseKey("event") != ""
+	_, found := p.parseKey("event")
+	return found
 }
 
 func (p *callgrindParser) parseCostLineDefinition() bool {
-	key, v := p.parseKeys("events", "positions")
-	if key == "" {
-		return false
-	}
 
-	items := strings.Fields(v)
-	if key == "events" {
+	if value, found := p.parseKey("events"); found {
+		items := strings.Fields(value)
 		p.eventCount = len(items)
 		p.costEvents = items
+		return true
 	}
 
-	if key == "positions" {
+	if value, found := p.parseKey("positions"); found {
+		items := strings.Fields(value)
 		p.positionCount = len(items)
 		p.costPositions = items
 		p.lastPositions = make([]int64, len(items))
+		return true
 	}
 
-	return true
+	return false
 }
 
 func (p *callgrindParser) parseCostSummary() bool {
-	key, value := p.parseKeys("summary", "totals")
-	if key == "" {
+	var fields []string
+
+	if value, found := p.parseKey("summary"); found {
+		fields = strings.Fields(value)
+	} else if value, found := p.parseKey("totals"); found {
+		fields = strings.Fields(value)
+	} else {
 		return false
 	}
 
-	fields := strings.Fields(value)
 	if totalCost, err := strconv.ParseFloat(fields[0], 32); err == nil {
 		p.profile.TotalCost = buildCost(totalCost, p.costEvents[0])
 	}
@@ -344,36 +358,25 @@ func (p *callgrindParser) parseAssociationSpec() bool {
 	return true
 }
 
-func (p *callgrindParser) parseKey(key string) string {
-	k, v := p.parseKeys(key)
-	if k == "" {
-		return ""
-	}
-
-	return v
-}
-
 var keyRx = regexp.MustCompile(`^(\w+):`)
 
-func (p *callgrindParser) parseKeys(keys ...string) (string, string) {
+func (p *callgrindParser) parseKey(key string) (string, bool) {
 	line := p.Line()
 
 	if !keyRx.MatchString(line) {
-		return "", ""
+		return "", false
 	}
 
 	parts := strings.Split(line, ":")
-	key := parts[0]
-	value := parts[1]
+	k := parts[0]
+	v := parts[1]
 
-	if !slices.Contains(keys, key) {
-		return "", ""
+	if k != key {
+		return "", false
 	}
 
-	value = strings.TrimSpace(value)
-
 	p.Consume()
-	return key, value
+	return strings.TrimSpace(v), true
 }
 
 func (p *callgrindParser) getCallee() *Function {
