@@ -1,6 +1,6 @@
 # make-otel
 
-*Turns a Remake profile into an otel trace*
+*Turns a [Remake] profile into an otel trace*
 
 ## Usage
 
@@ -35,3 +35,5 @@ There is a `docker-compose.yml` to run an OTEL Collector and a Jaeger instance f
 - [ ] environment variable for `--otlp-headers`
 - [ ] configuration file?
 - [ ] custom TLS certificates for exporter?
+
+[remake]: https://remake.readthedocs.io/en/latest/
